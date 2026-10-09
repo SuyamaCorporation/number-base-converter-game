@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>進数変換スピードゲーム</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #000; color: #39ff14; font-family: 'Courier New', monospace; }
+  .neon { text-shadow: 0 0 8px #39ff14, 0 0 20px #39ff14; }
+  .neon-dim { text-shadow: 0 0 4px #1a7a0a; }
+  .bit-1 { background: #39ff14; box-shadow: 0 0 6px #39ff14; }
+  .bit-0 { background: #1a2e00; border: 1px solid #1a5a00; }
+  .input-neon {
+    background: #000;
+    border: 1px solid #39ff14;
+    color: #39ff14;
+    caret-color: #39ff14;
+    outline: none;
+  }
+  .input-neon:focus { box-shadow: 0 0 8px #39ff14; }
+  .btn-neon {
+    background: transparent;
+    border: 1px solid #39ff14;
+    color: #39ff14;
+    transition: all 0.2s;
+  }
+  .btn-neon:hover { background: #39ff14; color: #000; box-shadow: 0 0 12px #39ff14; }
+  .btn-neon.active { background: #39ff14; color: #000; box-shadow: 0 0 12px #39ff14; }
+  .timer-bar { background: #1a2e00; }
+  .timer-fill { background: #39ff14; transition: width 0.1s linear; box-shadow: 0 0 6px #39ff14; }
+  .timer-warn { background: #ff6600; box-shadow: 0 0 6px #ff6600; }
+  .timer-crit { background: #ff0000; box-shadow: 0 0 6px #ff0000; }
+  .score-row { border-bottom: 1px solid #1a5a00; }
+  .correct-flash { animation: flashGreen 0.4s; }
+  .wrong-flash { animation: flashRed 0.4s; }
+  @keyframes flashGreen { 0%,100%{background:#000} 50%{background:#003300} }
+  @keyframes flashRed { 0%,100%{background:#000} 50%{background:#330000} }
+  select.input-neon option { background: #000; color: #39ff14; }
+</style>
+</head>
+<body class="min-h-screen p-4">
+
+<div class="max-w-2xl mx-auto">
+  <!-- Header -->
+  <div class="text-center mb-6">
+    <h1 class="text-3xl font-bold neon mb-1">進数変換スピードゲーム</h1>
+    <p class="text-xs neon-dim">> NUMBER BASE CONVERTER SPEED GAME_</p>
+  </div>
+
+  <!-- Setup Screen -->
+  <div id="setupScreen">
+    <div class="border border-green-600 p-4 mb-4">
+      <div class="text-xs neon-dim mb-3">> MODE SELECT_</div>
+      <div class="grid grid-cols-2 gap-2 mb-4" id="modeButtons">
+        <button class="btn-neon p-2 text-sm" data-mode="dec2bin" aria-label="10進数から2進数モードを選択">10進 → 2進</button>
+        <button class="btn-neon p-2 text-sm" data-mode="dec2hex" aria-label="10進数から16進数モードを選択">10進 → 16進</button>
+        <button class="btn-neon p-2 text-sm" data-mode="bin2dec" aria-label="2進数から10進数モードを選択">2進 → 10進</button>
+        <button class="btn-neon p-2 text-sm" data-mode="hex2dec" aria-label="16進数から10進数モードを選択">16進 → 10進</button>
+        <button class="btn-neon p-2 text-sm col-span-2" data-mode="mixed" aria-label="ランダムミックスモードを選択">ランダムミックス</button>
+      </div>
+
+      <div class="text-xs neon-dim mb-3">> DIFFICULTY_</div>
+      <div class="grid grid-cols-3 gap-2 mb-4" id="diffButtons">
+        <button class="btn-neon p-2 text-sm" data-diff="easy" aria-label="イージー難易度を選択">イージー<br><span class="text-xs opacity-60">0–15</span></button>
+        <button class="btn-neon p-2 text-sm" data-diff="medium" aria-label="ミディアム難易度を選択">ミディアム<br><span class="text-xs opacity-60">0–255</span></button>
+        <button class="btn-neon p-2 text-sm" data-diff="hard" aria-label="ハード難易度を選択">ハード<br><span class="text-xs opacity-60">0–65535</span></button>
+      </div>
+
+      <button id="startBtn" class="btn-neon w-full p-3 text-lg font-bold" aria-label="ゲームを開始する">
+        [START_GAME]
+      </button>
+    </div>
+
+    <!-- Score History -->
+    <div class="border border-green-900 p-4">
+      <div class="text-xs neon-dim mb-3">> SCORE HISTORY_</div>
+      <div id="historyList" class="space-y-1 text-sm"></div>
+      <div id="historyEmpty" class="text-xs opacity-40">// no history yet</div>
+    </div>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="gameScreen" class="hidden">
+    <!-- Status bar -->
+    <div class="flex justify-between text-xs mb-2 neon-dim">
+      <span>Q: <span id="qCount" class="neon">0</span>/10</span>
+      <span>ストリーク: <span id="streakCount" class="neon">0</span> 🔥</span>
+      <span>スコア: <span id="liveScore" class="neon">0</span></span>
+    </div>
+
+    <!-- Timer bar -->
+    <div class="timer-bar h-3 rounded mb-4 overflow-hidden">
+      <div id="timerFill" class="timer-fill h-full" style="width:100%"></div>
+    </div>
+    <div class="text-right text-xs neon-dim mb-2"><span id="timerVal">10.0</span>s</div>
+
+    <!-- Question -->
+    <div class="border border-green-700 p-4 mb-4 text-center">
+      <div class="text-xs neon-dim mb-2" id="questionMeta"></div>
+      <div class="text-4xl font-bold neon my-4" id="questionNumber"></div>
+      <div class="text-sm neon-dim" id="questionLabel"></div>
+    </div>
+
+    <!-- Bit visualization -->
+    <div id="bitViz" class="border border-green-900 p-3 mb-4 hidden">
+      <div class="text-xs neon-dim mb-2">> BIT PATTERN_</div>
+      <div id="bitCells" class="flex flex-wrap gap-1 justify-center"></div>
+    </div>
+
+    <!-- Input area -->
+    <div class="flex gap-2 mb-4">
+      <input id="answerInput" type="text" class="input-neon flex-1 p-3 text-xl font-bold"
+        placeholder="答えを入力..." aria-label="変換後の値を入力">
+      <button id="submitBtn" class="btn-neon px-6 font-bold" aria-label="答えを提出する">→</button>
+    </div>
+
+    <!-- Feedback -->
+    <div id="feedback" class="text-center text-lg font-bold mb-4 h-8"></div>
+
+    <!-- Correct answer reveal -->
+    <div id="correctReveal" class="hidden border border-green-900 p-3 mb-4 text-sm">
+      <span class="neon-dim">正解: </span><span id="correctVal" class="neon font-bold"></span>
+    </div>
+  </div>
+
+  <!-- Result Screen -->
+  <div id="resultScreen" class="hidden text-center">
+    <div class="border border-green-600 p-6 mb-4">
+      <div class="text-xs neon-dim mb-2">> GAME OVER_</div>
+      <div class="text-5xl font-bold neon mb-2" id="finalScore"></div>
+      <div class="text-sm neon-dim mb-4">ポイント</div>
+      <div class="grid grid-cols-3 gap-4 text-sm mb-4">
+        <div>
+          <div class="neon-dim text-xs">正解</div>
+          <div class="neon text-2xl" id="finalCorrect"></div>
+        </div>
+        <div>
+          <div class="neon-dim text-xs">最大ストリーク</div>
+          <div class="neon text-2xl" id="finalStreak"></div>
+        </div>
+        <div>
+          <div class="neon-dim text-xs">平均タイム</div>
+          <div class="neon text-2xl" id="finalAvgTime"></div>
+        </div>
+      </div>
+      <button id="playAgainBtn" class="btn-neon w-full p-3 font-bold" aria-label="もう一度プレイする">[PLAY AGAIN]</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const MODES = {
+  dec2bin: { label: '10進数 → 2進数', from: '10進数', to: '2進数' },
+  dec2hex: { label: '10進数 → 16進数', from: '10進数', to: '16進数' },
+  bin2dec: { label: '2進数 → 10進数', from: '2進数', to: '10進数' },
+  hex2dec: { label: '16進数 → 10進数', from: '16進数', to: '10進数' },
+  mixed: { label: 'ランダムミックス', from: '', to: '' }
+};
+const DIFFS = {
+  easy: { max: 15 },
+  medium: { max: 255 },
+  hard: { max: 65535 }
+};
+const MIXED_MODES = ['dec2bin','dec2hex','bin2dec','hex2dec'];
+
+let selectedMode = 'dec2bin';
+let selectedDiff = 'easy';
+let gameState = null;
+let timerInterval = null;
+
+// Setup buttons
+document.querySelectorAll('[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedMode = btn.dataset.mode;
+  });
+});
+document.querySelectorAll('[data-diff]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-diff]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedDiff = btn.dataset.diff;
+  });
+});
+
+// Pre-select defaults
+document.querySelector('[data-mode="dec2bin"]').classList.add('active');
+document.querySelector('[data-diff="easy"]').classList.add('active');
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('submitBtn').addEventListener('click', submitAnswer);
+document.getElementById('answerInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitAnswer();
+});
+document.getElementById('playAgainBtn').addEventListener('click', () => {
+  show('setupScreen');
+  hide('resultScreen');
+});
+
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+function randInt(max) { return Math.floor(Math.random() * (max + 1)); }
+
+function generateQuestion(mode, diff) {
+  const max = DIFFS[diff].max;
+  const actualMode = mode === 'mixed' ? MIXED_MODES[Math.floor(Math.random()*4)] : mode;
+  let num, display, answer;
+
+  if (actualMode === 'dec2bin') {
+    num = randInt(max);
+    display = num.toString(10);
+    answer = num.toString(2);
+  } else if (actualMode === 'dec2hex') {
+    num = randInt(max);
+    display = num.toString(10);
+    answer = num.toString(16).toUpperCase();
+  } else if (actualMode === 'bin2dec') {
+    num = randInt(max);
+    display = num.toString(2);
+    answer = num.toString(10);
+  } else if (actualMode === 'hex2dec') {
+    num = randInt(max);
+    display = num.toString(16).toUpperCase();
+    answer = num.toString(10);
+  }
+  return { actualMode, num, display, answer };
+}
+
+function startGame() {
+  hide('setupScreen');
+  show('gameScreen');
+  hide('resultScreen');
+
+  gameState = {
+    mode: selectedMode,
+    diff: selectedDiff,
+    qIndex: 0,
+    totalQ: 10,
+    score: 0,
+    streak: 0,
+    maxStreak: 0,
+    correct: 0,
+    timings: [],
+    timeStart: 0,
+    currentQ: null,
+    answered: false
+  };
+
+  nextQuestion();
+}
+
+function nextQuestion() {
+  if (gameState.qIndex >= gameState.totalQ) {
+    endGame();
+    return;
+  }
+  gameState.answered = false;
+  gameState.currentQ = generateQuestion(gameState.mode, gameState.diff);
+  gameState.timeStart = Date.now();
+
+  updateStatus();
+  renderQuestion();
+  startTimer();
+  document.getElementById('feedback').textContent = '';
+  hide('correctReveal');
+  document.getElementById('answerInput').value = '';
+  document.getElementById('answerInput').focus();
+}
+
+function renderQuestion() {
+  const q = gameState.currentQ;
+  const mInfo = MODES[q.actualMode];
+  document.getElementById('questionMeta').textContent = mInfo.label;
+  document.getElementById('questionNumber').textContent = q.display;
+  document.getElementById('questionLabel').textContent = mInfo.to + ' に変換してください';
+
+  // Bit visualization for binary answers or binary input
+  const bitViz = document.getElementById('bitViz');
+  if (q.actualMode === 'dec2bin' || q.actualMode === 'hex2dec' && false) {
+    // Show bit pattern (will update on correct answer)
+    bitViz.classList.add('hidden');
+  } else if (q.actualMode === 'bin2dec') {
+    bitViz.classList.remove('hidden');
+    renderBits(q.display);
+  } else {
+    bitViz.classList.add('hidden');
+  }
+}
+
+function renderBits(binStr) {
+  const cells = document.getElementById('bitCells');
+  cells.innerHTML = '';
+  const padded = binStr.padStart(Math.max(8, binStr.length), '0');
+  padded.split('').forEach((bit, i) => {
+    const cell = document.createElement('div');
+    cell.className = `w-8 h-8 flex items-center justify-center text-xs font-bold ${bit === '1' ? 'bit-1 text-black' : 'bit-0'}`;
+    cell.textContent = bit;
+    cells.appendChild(cell);
+  });
+}
+
+function showBitAnswer(binStr) {
+  const bitViz = document.getElementById('bitViz');
+  bitViz.classList.remove('hidden');
+  renderBits(binStr);
+}
+
+function startTimer() {
+  clearInterval(timerInterval);
+  const total = 10000;
+  const startTime = Date.now();
+
+  timerInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, total - elapsed);
+    const pct = (remaining / total) * 100;
+
+    document.getElementById('timerVal').textContent = (remaining / 1000).toFixed(1);
+    const fill = document.getElementById('timerFill');
+    fill.style.width = pct + '%';
+    fill.className = 'timer-fill h-full';
+    if (pct < 30) fill.classList.add('timer-crit');
+    else if (pct < 50) fill.classList.add('timer-warn');
+
+    if (remaining <= 0) {
+      clearInterval(timerInterval);
+      if (!gameState.answered) timeOut();
+    }
+  }, 50);
+}
+
+function submitAnswer() {
+  if (gameState.answered) return;
+  const raw = document.getElementById('answerInput').value.trim().toUpperCase();
+  if (!raw) return;
+  processAnswer(raw);
+}
+
+function processAnswer(raw) {
+  clearInterval(timerInterval);
+  gameState.answered = true;
+  const q = gameState.currentQ;
+  const correct = q.answer.toUpperCase();
+  const elapsed = (Date.now() - gameState.timeStart) / 1000;
+  gameState.timings.push(elapsed);
+  gameState.qIndex++;
+
+  const isCorrect = raw === correct;
+  const fb = document.getElementById('feedback');
+
+  if (isCorrect) {
+    gameState.correct++;
+    gameState.streak++;
+    gameState.maxStreak = Math.max(gameState.maxStreak, gameState.streak);
+    const timeBonus = Math.round(Math.max(0, (10 - elapsed) * 10));
+    const streakBonus = gameState.streak > 1 ? (gameState.streak - 1) * 5 : 0;
+    const pts = 100 + timeBonus + streakBonus;
+    gameState.score += pts;
+    fb.style.color = '#39ff14';
+    fb.textContent = `✓ 正解！ +${pts}pts`;
+    document.body.classList.add('correct-flash');
+    setTimeout(() => document.body.classList.remove('correct-flash'), 400);
+
+    if (q.actualMode === 'dec2bin' || q.actualMode === 'hex2dec') {
+      showBitAnswer(q.num.toString(2));
+    }
+  } else {
+    gameState.streak = 0;
+    fb.style.color = '#ff3333';
+    fb.textContent = `✗ 不正解`;
+    document.body.classList.add('wrong-flash');
+    setTimeout(() => document.body.classList.remove('wrong-flash'), 400);
+    document.getElementById('correctVal').textContent = correct;
+    show('correctReveal');
+    if (q.actualMode === 'dec2bin' || q.actualMode === 'hex2dec') {
+      showBitAnswer(q.num.toString(2));
+    }
+  }
+
+  updateStatus();
+  setTimeout(nextQuestion, 1200);
+}
+
+function timeOut() {
+  if (gameState.answered) return;
+  gameState.answered = true;
+  gameState.streak = 0;
+  gameState.qIndex++;
+  gameState.timings.push(10);
+  const q = gameState.currentQ;
+  const fb = document.getElementById('feedback');
+  fb.style.color = '#ff6600';
+  fb.textContent = `⏱ タイムオーバー！`;
+  document.getElementById('correctVal').textContent = q.answer.toUpperCase();
+  show('correctReveal');
+  if (q.actualMode === 'dec2bin' || q.actualMode === 'hex2dec') {
+    showBitAnswer(q.num.toString(2));
+  }
+  updateStatus();
+  setTimeout(nextQuestion, 1200);
+}
+
+function updateStatus() {
+  document.getElementById('qCount').textContent = gameState.qIndex;
+  document.getElementById('streakCount').textContent = gameState.streak;
+  document.getElementById('liveScore').textContent = gameState.score;
+}
+
+function endGame() {
+  clearInterval(timerInterval);
+  hide('gameScreen');
+  show('resultScreen');
+
+  const avg = gameState.timings.length > 0
+    ? (gameState.timings.reduce((a,b) => a+b, 0) / gameState.timings.length).toFixed(1)
+    : '0.0';
+
+  document.getElementById('finalScore').textContent = gameState.score;
+  document.getElementById('finalCorrect').textContent = `${gameState.correct}/${gameState.totalQ}`;
+  document.getElementById('finalStreak').textContent = gameState.maxStreak;
+  document.getElementById('finalAvgTime').textContent = avg + 's';
+
+  saveHistory({
+    date: new Date().toLocaleDateString('ja-JP'),
+    mode: MODES[gameState.mode]?.label || gameState.mode,
+    diff: { easy:'イージー', medium:'ミディアム', hard:'ハード' }[gameState.diff],
+    score: gameState.score,
+    correct: gameState.correct,
+    total: gameState.totalQ
+  });
+  renderHistory();
+}
+
+function saveHistory(entry) {
+  let h = [];
+  try { h = JSON.parse(localStorage.getItem('numBaseHistory') || '[]'); } catch(e){}
+  h.unshift(entry);
+  if (h.length > 10) h = h.slice(0, 10);
+  localStorage.setItem('numBaseHistory', JSON.stringify(h));
+}
+
+function renderHistory() {
+  let h = [];
+  try { h = JSON.parse(localStorage.getItem('numBaseHistory') || '[]'); } catch(e){}
+  const list = document.getElementById('historyList');
+  const empty = document.getElementById('historyEmpty');
+  list.innerHTML = '';
+  if (h.length === 0) { empty.style.display = ''; return; }
+  empty.style.display = 'none';
+  h.forEach(entry => {
+    const row = document.createElement('div');
+    row.className = 'score-row flex justify-between py-1 text-xs';
+    const d = document.createElement('span');
+    d.className = 'neon-dim';
+    d.textContent = `${entry.date} ${entry.mode} [${entry.diff}]`;
+    const s = document.createElement('span');
+    s.className = 'neon';
+    s.textContent = `${entry.score}pts (${entry.correct}/${entry.total})`;
+    row.appendChild(d);
+    row.appendChild(s);
+    list.appendChild(row);
+  });
+}
+
+renderHistory();
+</script>
+</body>
+</html>
